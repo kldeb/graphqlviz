@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-var fetch = require('cross-fetch')
-var meow = require('meow')
-var fs = require('fs')
-var getStdin = require('get-stdin')
-var GraphQL = require('graphql')
-var graphql = GraphQL.graphql
-var parse = GraphQL.parse
-var buildASTSchema = GraphQL.buildASTSchema
-var graphqlviz = require('./')
+var fetch = require("cross-fetch");
+var meow = require("meow");
+var fs = require("fs");
+var getStdin = require("get-stdin");
+var GraphQL = require("graphql");
+var graphql = GraphQL.graphql;
+var parse = GraphQL.parse;
+var buildASTSchema = GraphQL.buildASTSchema;
+var graphqlviz = require("./");
 
 var cli = meow(
   `
@@ -35,159 +35,175 @@ var cli = meow(
   {
     flags: {
       verbose: {
-        type: 'boolean',
-        alias: 'v'
+        type: "boolean",
+        alias: "v",
       },
       theme: {
-        type: 'string',
-        alias: 't'
+        type: "string",
+        alias: "t",
       },
       graphql: {
-        type: 'boolean',
-        alias: 'g'
+        type: "boolean",
+        alias: "g",
       },
       auth: {
-        type: 'string',
-        alias: 'a'
-      }
-    }
+        type: "string",
+        alias: "a",
+      },
+    },
   }
-)
+);
 
-if (cli.flags.theme && typeof cli.flags.theme === 'string') {
-  cli.flags.theme = JSON.parse(fs.readFileSync(cli.flags.theme))
+if (cli.flags.theme && typeof cli.flags.theme === "string") {
+  cli.flags.theme = JSON.parse(fs.readFileSync(cli.flags.theme));
 }
 
 // displays help and exits
-function terminate () {
-  console.error(cli.help)
-  process.exit(1)
+function terminate() {
+  console.error(cli.help);
+  process.exit(1);
 }
 
 // logs the error and exits
-function fatal (e, text) {
-  console.error('ERROR processing input. Use --verbose flag to see output.')
-  console.error(e.message)
+function fatal(e, text) {
+  console.error("ERROR processing input. Use --verbose flag to see output.");
+  console.error(e.message);
 
   if (cli.flags.verbose) {
-    console.error(text)
+    console.error(text);
   }
 
-  process.exit(1)
+  process.exit(1);
 }
 
 // given a "GraphQL schema language" text file, converts into introspection JSON
-function introspect (text) {
+function introspect(text) {
+  // for appsync / amplify
+  var appsync = `
+    directive @aws_cognito_user_pools on OBJECT | FIELD_DEFINITION
+    directive @aws_api_key on OBJECT | FIELD_DEFINITION
+    directive @aws_subscribe(mutations: String) on OBJECT | FIELD_DEFINITION
+    scalar AWSDate
+    scalar AWSTime
+    scalar AWSDateTime
+    scalar AWSTimestamp
+    scalar AWSEmail
+    scalar AWSJSON
+    scalar AWSURL
+    scalar AWSPhone
+    scalar AWSIPAddress
+  `;
+
   return new Promise(function (resolve, reject) {
     try {
-      var astDocument = parse(text)
-      var schema = buildASTSchema(astDocument)
+      var astDocument = parse(appsync + text);
+      var schema = buildASTSchema(astDocument);
       graphql(schema, graphqlviz.query)
         .then(function (data) {
-          resolve(data)
+          resolve(data);
         })
         .catch(function (e) {
-          reject('Fatal error, exiting.')
-          fatal(e, text)
-        })
+          reject("Fatal error, exiting.");
+          fatal(e, text);
+        });
     } catch (e) {
-      reject('Fatal error, exiting.')
-      fatal(e, text)
+      reject("Fatal error, exiting.");
+      fatal(e, text);
     }
-  })
+  });
 }
 
-if (cli.input[0] === 'query') {
-  process.stdout.write(JSON.stringify({ query: graphqlviz.query }) + '\n')
+if (cli.input[0] === "query") {
+  process.stdout.write(JSON.stringify({ query: graphqlviz.query }) + "\n");
 } else if (cli.flags.printTheme) {
-  process.stdout.write(JSON.stringify(graphqlviz.theme, null, 2) + '\n')
+  process.stdout.write(JSON.stringify(graphqlviz.theme, null, 2) + "\n");
 } else {
-  var p
+  var p;
 
   if (!process.stdin.isTTY) {
     // stdin
     p = getStdin().then(function (stdin) {
-      if (stdin.trim() === '') {
-        return terminate()
+      if (stdin.trim() === "") {
+        return terminate();
       }
-      return stdin
+      return stdin;
     });
   } else if (cli.input.length === 1) {
-    if (cli.input[0].slice(0, 4) === 'http') {
+    if (cli.input[0].slice(0, 4) === "http") {
       // otherwise http(s)
       var headers = {
-        Accept: 'application/json',
-        'Content-Type': 'application/json'
-      }
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      };
       if (cli.flags.auth) {
-        headers.Authorization = cli.flags.auth
+        headers.Authorization = cli.flags.auth;
       }
       p = fetch(cli.input[0], {
-        method: 'POST',
+        method: "POST",
         headers: headers,
-        body: JSON.stringify({ query: graphqlviz.query })
+        body: JSON.stringify({ query: graphqlviz.query }),
       }).then(function (res) {
         if (!res.ok && cli.flags.verbose) {
           console.log(
-            'Request for schema failed w/ ' +
-            res.status +
-            ' (' +
-            res.statusText +
-            ')'
-          )
+            "Request for schema failed w/ " +
+              res.status +
+              " (" +
+              res.statusText +
+              ")"
+          );
         }
-        return res.text()
-      })
+        return res.text();
+      });
     } else {
       // if not http, try local file
       p = new Promise(function (resolve, reject) {
-        fs.readFile(cli.input[0], { encoding: 'utf8' }, function (err, data) {
+        fs.readFile(cli.input[0], { encoding: "utf8" }, function (err, data) {
           if (err) {
-            reject(err)
-            fatal(err, data)
+            reject(err);
+            fatal(err, data);
           } else {
-            resolve(data)
+            resolve(data);
           }
-        })
-      })
+        });
+      });
     }
   } else {
-    terminate()
+    terminate();
   }
 
   // after getting text, try to parse as JSON and process, or use graphql to process a "graphql schema language" file
   var introspectionPromise = p.then(function (text) {
     if (!text) {
-      return terminate()
+      return terminate();
     }
-    var returnedPromise
-    const first = text.match(/[^\s]/)
+    var returnedPromise;
+    const first = text.match(/[^\s]/);
     if (!first) {
-      throw new Error('No text to parse')
+      throw new Error("No text to parse");
     }
     if (first[0] === "{") {
       try {
-        returnedPromise = Promise.resolve(JSON.parse(text))
+        returnedPromise = Promise.resolve(JSON.parse(text));
       } catch (e) {
-        fatal(e, text)
+        fatal(e, text);
       }
     } else {
-      returnedPromise = introspect(text)
+      returnedPromise = introspect(text);
     }
-    return returnedPromise
-  })
+    return returnedPromise;
+  });
 
   introspectionPromise.then(function (executionResult) {
     // undocumented outputJSON can be used to convert graphql schema to JSON (useful for generating test data)
     if (cli.flags.outputJSON) {
-      console.log(JSON.stringify(executionResult, null, 2, 2))
-      process.exit(1)
+      console.log(JSON.stringify(executionResult, null, 2, 2));
+      process.exit(1);
     } else {
       try {
-        console.log(graphqlviz.render(executionResult, cli.flags))
+        console.log(graphqlviz.render(executionResult, cli.flags));
       } catch (e) {
-        fatal(e, JSON.stringify(executionResult, null, 2, 2))
+        fatal(e, JSON.stringify(executionResult, null, 2, 2));
       }
     }
-  })
+  });
 }
